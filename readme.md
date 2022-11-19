@@ -2,6 +2,7 @@
 
 ## The structure of this repo.
 
+```
 │   models.py
 │   readme.md
 │
@@ -36,6 +37,7 @@
         test_downstream.py
         train_downstream.py
         train_downstream_nogen.py
+```
 
 ## Instruction
 

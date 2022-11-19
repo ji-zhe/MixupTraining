@@ -40,18 +40,20 @@ def gradient_penalty(x, y, c):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--n_epochs", type=int, default=500, help="number of epochs of training [deprecated]")
+    parser.add_argument("--n_epochs", type=int, default=200, help="number of epochs of training")
     parser.add_argument("--n_iters", type=int, default=100000, help="number of iterations of training")
-    parser.add_argument("--latent_dim", type=int, default=256, help="dimensionality of the latent space")
-    parser.add_argument("--img_size", type=int, default=64, help="size of each image dimension")
     parser.add_argument("--data_num", type=int, default=4096, help="size of training dataset")
-    # parser.add_argument("--channels", type=int, default=1, help="number of image channels")
-    parser.add_argument("--n_critic", type=int, default=5, help="number of training steps for discriminator per iter")
     parser.add_argument("--lr", type=float, default=4e-4, help="adam: learning rate")
     parser.add_argument("--b1", type=float, default=0.5, help="adam: decay of first order momentum of gradient")
     parser.add_argument("--b2", type=float, default=0.999, help="adam: decay of first order momentum of gradient")
+    parser.add_argument("--latent_dim", type=int, default=100, help="dimensionality of the latent space")
+    parser.add_argument("--img_size", type=int, default=32, help="size of each image dimension")
+    # parser.add_argument("--channels", type=int, default=1, help="number of image channels")
+    parser.add_argument("--n_critic", type=int, default=5, help="number of training steps for discriminator per iter")
+    parser.add_argument("--n_class", type=int, default=10, help="number of classes")
     opt = parser.parse_args()
     print(opt)
+    n_class = opt.n_class
 
     latent_dim = opt.latent_dim
     bs = 64
@@ -61,9 +63,9 @@ if __name__ == "__main__":
     print("latent dimension ", latent_dim)
     print("learning rate", opt.lr)
     # Initialize generator and discriminator
-    generator = GanGenerator(z_dim=latent_dim, y_dim=2)
+    generator = GanGenerator(z_dim=latent_dim, y_dim=n_class)
     generator = nn.DataParallel(generator).cuda()
-    discriminator = GanDiscriminator(y_dim=2) #3
+    discriminator = GanDiscriminator(y_dim=n_class) #3
     discriminator = nn.DataParallel(discriminator).cuda()
 
     # train_attr = '/home/lxiang_stu8/LFW/dataset/pub_attri.csv'
@@ -71,18 +73,23 @@ if __name__ == "__main__":
 
     # _, dataloader = init_dataloader(train_attr, train_fig, batch_size=bs, allAttri=False, attriID=1, skiprows=1,
     #                                 normalization=False)
-    trans_n = transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
-    trans_crop = transforms.CenterCrop(128)
-    trnas_resize = transforms.Resize(64)
-    trans_tensor = transforms.ToTensor()
-    trans = transforms.Compose([trans_crop, trnas_resize, trans_tensor])
-    # trans = transforms.Compose([trnas_resize, trans_tensor])
-    dataset = torchvision.datasets.CelebA('../dataset/', split= 'train', target_type= 'attr', transform = trans, target_transform = None, download = False)
+    transform_train = transforms.Compose([
+        transforms.RandomCrop(32, padding=4),
+        transforms.RandomHorizontalFlip(),
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+
+    transform_test = transforms.Compose([
+        transforms.ToTensor(),
+        transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010)),
+    ])
+    dataset = torchvision.datasets.CIFAR10('../dataset/cifar10', train=False, transform = transform_train, target_transform = None, download = False)
     torch.manual_seed(0)
     length = len(dataset)
     dataset, _ = torch.utils.data.random_split(dataset, [opt.data_num, length-opt.data_num])
 
-    dataloader = torch.utils.data.DataLoader(dataset, bs)
+    dataloader = torch.utils.data.DataLoader(dataset, bs, shuffle=True, drop_last = True)
     # import pdb;pdb.set_trace()
 
     result_dir = './models/zdim{}/datasetSize{}/GAN_model/images/'.format(opt.latent_dim, opt.data_num)
@@ -101,13 +108,13 @@ if __name__ == "__main__":
     # ----------
     batches_done = 0
     epoch = 0
+    # for epoch in range(opt.n_epochs):
     while batches_done < opt.n_iters:
         for i, (imgs, cond) in enumerate(dataloader):
-            epoch += 1
             # Configure input
             real_imgs = imgs.cuda()
-            cond = cond[:,target_idx].cuda()
-            cond = torch.nn.functional.one_hot(cond, 2)
+            # cond = cond[:,target_idx].cuda()
+            cond = torch.nn.functional.one_hot(cond, n_class)
             # Sample noise as generator input
             z = torch.randn((imgs.shape[0], latent_dim), requires_grad=True).cuda()
 
@@ -129,6 +136,7 @@ if __name__ == "__main__":
 
             # Train the generator every n_critic steps
             if (batches_done + 1) % opt.n_critic == 0:
+            # if (i + 1) % opt.n_critic == 0:
                 # Generate a batch of images
                 fake_imgs = generator(z, cond)
                 # Loss measures generator's ability to fool the discriminator
@@ -148,13 +156,15 @@ if __name__ == "__main__":
                 )
                 print("gp is {}".format(gp))
 
+
             batches_done += 1
 
-            if batches_done % (opt.n_critic*100) == 0:
+            if batches_done % (opt.n_critic*1000) == 0:
                 torch.save(generator.module.state_dict(), store_param + 'G_{}.pkl'.format(batches_done))
                 torch.save(discriminator.module.state_dict(), store_param + 'D_{}.pkl'.format(batches_done))
                 save_image(fake_imgs.detach().data, result_dir + '/img_{}.jpg'.format(batches_done))
-    
+
     torch.save(generator.module.state_dict(), store_param + 'G_{}.pkl'.format(batches_done))
     torch.save(discriminator.module.state_dict(), store_param + 'D_{}.pkl'.format(batches_done))
     save_image(fake_imgs.detach().data, result_dir + '/img_{}.jpg'.format(batches_done))
+    

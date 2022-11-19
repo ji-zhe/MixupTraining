@@ -90,8 +90,8 @@
 │               000002.jpg
 │
 ├───drawFigures
-│       draw.py
-│       histo.py
+│       draw_logan_eval.py
+│       draw_ratio_eval.py
 │
 ├───trainTargetModel
 │       train_gan.py

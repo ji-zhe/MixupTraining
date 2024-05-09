@@ -1,5 +1,5 @@
 # Codes for Mixup Training for Generative Models to Defend Membership Inference Attacks
-
+Paper link: https://ieeexplore.ieee.org/document/10229036
 ## The structure of this repo.
 
 ```
